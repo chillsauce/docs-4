@@ -78,4 +78,4 @@ Read the [specification](https://github.com/tempoxyz/tempo/blob/main/tips/tip-10
 
 ### Breaking changes
 
-Integrations calling Tempo's native precompiles with tight gas limits may need to slightly increase those limits to avoid out-of-gas failures under T12's [EIP-2200 `SSTORE` sentry](https://eips.ethereum.org/EIPS/eip-2200).
+Native-precompile calls that reach a storage write with 2,300 gas or less remaining in the call need a higher transaction or forwarded gas limit under T12's [EIP-2200 `SSTORE` sentry](https://eips.ethereum.org/EIPS/eip-2200); the sentry does not increase gas charged for successful execution.
