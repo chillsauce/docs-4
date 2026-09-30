@@ -3,6 +3,7 @@ title: Network Upgrades and Releases
 description: Timeline and details for Tempo network upgrades and important releases for node operators.
 ---
 
+import { Tab, Tabs } from 'vocs'
 import { Badge } from '../../../../components/Badge'
 
 # Network Upgrades and Releases
@@ -10,6 +11,33 @@ import { Badge } from '../../../../components/Badge'
 Tempo uses scheduled network upgrades to introduce protocol changes. Each upgrade goes through testnet activation before mainnet. This page also tracks important releases that node operators should be aware of.
 
 For detailed release notes and binaries, see the [Changelog](/docs/changelog).
+
+## Network identities
+
+Follow/RPC nodes and validators verify consensus finalization certificates, including those that authenticate Tempo snapshots, against the current network identity. Each `tempo` release includes these identities as [built-in trust anchors](https://github.com/tempoxyz/tempo/blob/main/crates/chainspec/src/network_identity.rs). To learn how the identity is produced and rotated, see [Consensus, DKG, and network identity](/docs/guide/node/consensus-and-dkg).
+
+<Tabs>
+<Tab title="Mainnet">
+
+**Network identity, from epoch 0:**
+
+```text
+// [!include ~/snippets/network-identities.txt:mainnet-identity]
+```
+
+</Tab>
+<Tab title="Testnet">
+
+**Network identity, from epoch 51:**
+
+```text
+// [!include ~/snippets/network-identities.txt:testnet-identity]
+```
+
+</Tab>
+</Tabs>
+
+After an identity rotation, this section and the release table below list the new identity and the first release that includes it. Start new nodes with that release or later. If a node fails to start after a rotation, see [My node fails to start: finalized tip certificate failed verification against the trusted network identity](/docs/guide/node/validator-troubleshooting#my-node-fails-to-start-finalized-tip-certificate-failed-verification-against-the-trusted-network-identity).
 
 ## Node Operator Updates
 
