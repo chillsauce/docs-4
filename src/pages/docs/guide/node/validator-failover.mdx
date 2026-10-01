@@ -10,51 +10,22 @@ Move your validator to a replacement host while preserving its identity and cons
 
 | Deployment | Recovery path |
 | --- | --- |
-| Bare metal | [Restore the complete disk state](#restore-bare-metal-validator), including execution and consensus data. |
-| Cloud Provider | [Transfer the consensus directory](#restore-a-cloud-validator) and use sufficiently recent execution state. |
-| Follower Standby Node | [Transfer the consensus directory](#restore-the-replacement) and use sufficiently recent execution state. |
+| Bare metal | [Rotate or transfer the consensus directory](#bare-metal-validator) |
+| Cloud Provider | [Transfer the consensus directory](#cloud-validator) |
 
 :::danger[Prevent double-signing]
 Only one node may run with a validator signing key at a time. Before starting the replacement, fence the old validator: stop it and prevent automatic restarts.
 :::
 
-<span id="preserve-validator-identity-and-networking" />
+## Bare-metal validator
+
+If the bare metal host is not ephemeral, failover to a new host by following the [validator rotation](/docs/guide/node/validator-rotation) runbook which promotes a standby follower node into validator whilst deactivating the running one.
+
+If the setup allows for a shared disks, the existing validator's identity can be retained restoring it's consensus directly on a new host as described in the steps [below](#restore-the-replacement). If the new host is registered under a different ingress or egress ips, make sure they are [updated onchain](/docs/guide/node/validator-rotation#update-ip-addresses).
+
+## Cloud validator
 
 Reuse the validator's signing key, latest complete consensus directory, and registered ingress and egress addresses. If the addresses change, [update them onchain](/docs/guide/node/validator-rotation#update-ip-addresses) and wait for finalization before starting the replacement. If consensus state is lost, follow [resetting validator data](/docs/guide/node/validator-lifecycle#resetting-your-validators-data).
-
-<span id="restore-bare-metal-disk-state" />
-
-## Restore bare-metal validator
-
-Restore execution and consensus data together on the replacement host.
-
-:::::steps
-
-### Fence the failed host
-
-Stop the validator and prevent it from restarting. If the host is unreachable, fence it through your infrastructure before bringing up the replacement.
-
-```bash
-sudo systemctl stop tempo
-```
-
-### Restore the complete data directories
-
-Move or restore the disks containing the full `--datadir` directory, including `--consensus.datadir` if seperately configured.
-
-### Start the replacement validator
-
-Restore the [signing key](/docs/guide/node/validator-keys) and start the existing validator service with the same node version. If the new host is configured with a different ingress/egress IP, [update the validator's IP addresses onchain](/docs/guide/node/validator-rotation#update-ip-addresses).
-
-```bash
-sudo systemctl start tempo
-```
-
-Verify [consensus participation](/docs/guide/node/validator-monitoring#consensus-states) on the replacement.
-
-:::::
-
-## Restore a cloud validator
 
 ### Prepare cloud consensus storage
 
@@ -81,24 +52,15 @@ The default retention window is about ~3 epochs worth of blocks, roughly ~9hrs w
 
 If your failover procedure always involves using a standby follower node that is in sync, the retention window can be shortened to accomadate a smaller consensus disk via the `--consensus.finalized-blocks-retention` flag. A reasonable default in this circumstance is `16_384`, leaving a ~2hr window to succesfully failover.
 
-<span id="recover-a-cloud-validator" />
-<span id="recover-a-cloud-validator-or-synced-standby" />
-
 ### Restore the replacement
 
 :::::steps
 
 #### Fence the old validator
 
-<span id="fence-the-old-instance-and-release-its-volume" />
-
 Fence the old validator and disable any automation that could restart it. If transferring a network-attached volume, detach it using your cloud provider's procedure once the old host can no longer write.
 
 #### Prepare execution state on the replacement
-
-<span id="restore-execution-state-on-the-replacement" />
-<span id="prepare-a-follower" />
-<span id="promote-the-follower" />
 
 Use the same node version and chain configuration as the old validator.
 
@@ -122,8 +84,6 @@ Do not point `tempo download --consensus.datadir` at the preserved volume. In pa
 
 #### Transfer the validator's consensus directory
 
-<span id="attach-the-preserved-consensus-volume" />
-
 Attach and mount the preserved volume, or restore the previous validator's complete consensus directory. Keep it separate from any consensus directory created by the follower or snapshot; do not merge their files.
 
 A follower's own consensus archive does not contain the active validator's private signing state. Using it can delay signing participation until the node recovers a share. Transfer the active validator's latest complete directory to preserve that state.
@@ -138,8 +98,6 @@ Verify [consensus participation](/docs/guide/node/validator-monitoring#consensus
 
 :::::
 
-<span id="verify-validator-participation" />
-
 ## After failover
 
 Confirm [validator status](/docs/guide/node/validator-status) and [consensus participation](/docs/guide/node/validator-monitoring#consensus-states) on the replacement.
@@ -148,4 +106,4 @@ Treat the replacement as the active validator until you intentionally move the r
 
 If the old host's local consensus datadir is empty, follow [Running RPC and Standby Nodes](/docs/guide/node/rpc) to initially boostrap it again as a follower.
 
-Keep the active validator's remote consensus volume attached exclusively to the active instance.
+Keep the active validator's volume attached exclusively to the active instance.
