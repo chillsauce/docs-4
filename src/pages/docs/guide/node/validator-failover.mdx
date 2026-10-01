@@ -10,9 +10,9 @@ Move your validator to a replacement host while preserving its identity and cons
 
 | Deployment | Recovery path |
 | --- | --- |
-| Bare metal with recoverable disks | [Restore the complete disk state](#restore-bare-metal-validator), including execution and consensus data. |
-| Cloud with local execution disks | [Transfer the consensus directory](#restore-a-cloud-validator) and use sufficiently recent execution state. |
-| Synced standby follower | [Transfer the consensus directory](#restore-a-cloud-validator) and use its existing execution state. |
+| Bare metal | [Restore the complete disk state](#restore-bare-metal-validator), including execution and consensus data. |
+| Cloud Provider | [Transfer the consensus directory](#restore-a-cloud-validator) and use sufficiently recent execution state. |
+| Follower Standby Node | [Transfer the consensus directory](#restore-the-replacement) and use sufficiently recent execution state. |
 
 :::danger[Prevent double-signing]
 Only one node may run with a validator signing key at a time. Before starting the replacement, fence the old validator: stop it and prevent automatic restarts.
@@ -26,7 +26,7 @@ Reuse the validator's signing key, latest complete consensus directory, and regi
 
 ## Restore bare-metal validator
 
-When the disks survive a host failure, restore execution and consensus data together on the replacement host.
+Restore execution and consensus data together on the replacement host.
 
 :::::steps
 
@@ -40,13 +40,11 @@ sudo systemctl stop tempo
 
 ### Restore the complete data directories
 
-Move or restore the disks containing the full `--datadir` directory, including consensus state. If you use `--consensus.datadir`, restore that directory too.
-
-Copy or mount files only after the source process has stopped. Keep the latest consensus state; if execution data comes from an older backup, apply the [execution recovery window](#execution-recovery-window) requirements below.
+Move or restore the disks containing the full `--datadir` directory, including `--consensus.datadir` if seperately configured.
 
 ### Start the replacement validator
 
-Restore [signing-key access](/docs/guide/node/validator-keys) and registered networking, then start the existing validator service with the same node version and restored data directories.
+Restore the [signing key](/docs/guide/node/validator-keys) and start the existing validator service with the same node version. If the new host is configured with a different ingress/egress IP, [update the validator's IP addresses onchain](/docs/guide/node/validator-rotation#update-ip-addresses).
 
 ```bash
 sudo systemctl start tempo
@@ -58,13 +56,11 @@ Verify [consensus participation](/docs/guide/node/validator-monitoring#consensus
 
 ## Restore a cloud validator
 
-Both paths transfer the active validator's complete consensus directory. A fresh replacement restores execution state from a snapshot or backup; a synced standby reuses its existing execution database.
-
 ### Prepare cloud consensus storage
 
 Keep execution data on [local NVMe storage](/docs/guide/node/system-requirements) and consensus data on a persistent network-attached volume that you can detach and attach to a replacement host. Use `--consensus.datadir` to select the consensus directory on that volume.
 
-The following example uses mainnet. Use `--chain moderato` for testnet. Provision and mount the volume before starting the service. Keep the other flags from your existing validator configuration, including `--consensus.secret` for an encrypted signing key.
+Provision and mount the volume before starting the service. Keep the other flags from your existing validator configuration.
 
 ```bash
 tempo node \
@@ -81,11 +77,9 @@ To migrate an existing validator to this layout, stop it, copy its complete cons
 
 The consensus volume retains recent finalized blocks that the replacement can replay into its execution database. This matters when local execution disks are lost and the replacement starts from a snapshot or an older execution backup. A synced follower already has recent execution state, so it avoids most or all of this replay.
 
-The default retention window is about ~3 epochs worth of blocks, roughly ~9hrs worth of data (500ms block times). This means the execution disk can be 9 hours behind the previously active validator and startup fine. Any longer would and the failover node would fail to startup. Recently downloaded snapshots will also always fall within this range.
+The default retention window is about ~3 epochs worth of blocks, roughly ~9hrs worth of data (500ms block times). This means the execution disk can be 9 hours behind the previously active validator and startup fine. Any longer would and the failover node would fail to startup.
 
-A larger retention window means a larger required consensus disk volume. If your failover procedure always involves using a standby follower node that is in sync, the retention window can be shortened to accomadate a smaller consensus disk via the `--consensus.finalized-blocks-retention` flag. A reasonable default in this circumstance is `16_384`, leaving ~2hrs window to succesfully failover.
-
-Test this handoff before relying on it in production.
+If your failover procedure always involves using a standby follower node that is in sync, the retention window can be shortened to accomadate a smaller consensus disk via the `--consensus.finalized-blocks-retention` flag. A reasonable default in this circumstance is `16_384`, leaving a ~2hr window to succesfully failover.
 
 <span id="recover-a-cloud-validator" />
 <span id="recover-a-cloud-validator-or-synced-standby" />
@@ -98,7 +92,7 @@ Test this handoff before relying on it in production.
 
 <span id="fence-the-old-instance-and-release-its-volume" />
 
-Fence the old validator and disable any automation that could restart it. Stop the source process before copying its consensus directory. If transferring a network-attached volume, detach it using your cloud provider's procedure once the old host can no longer write or sign. Keep the entire consensus directory intact.
+Fence the old validator and disable any automation that could restart it. If transferring a network-attached volume, detach it using your cloud provider's procedure once the old host can no longer write.
 
 #### Prepare execution state on the replacement
 
@@ -108,19 +102,19 @@ Fence the old validator and disable any automation that could restart it. Stop t
 
 Use the same node version and chain configuration as the old validator.
 
-**For a [synced standby](/docs/guide/node/rpc):** stop the follower cleanly and wait for it to exit. Keep its existing execution `--datadir`; use that path as `<EXECUTION_DATADIR>` below. No snapshot download is needed.
+**For a [synced standby](/docs/guide/node/rpc):** stop the follower cleanly and wait for it to exit. The follower's local execution state, `--datadir` will continue in use as a promoted validator.
 
 ```bash
 sudo systemctl stop tempo-follower
 ```
 
-**For a fresh replacement:** restore a recent execution backup or download a minimal snapshot into a new local data directory. This example uses mainnet; use `--chain moderato` for testnet.
+**For a fresh replacement:** restore a recent execution backup or download a minimal snapshot into a new local data directory.
 
 ```bash
-tempo download --chain mainnet --minimal --datadir <EXECUTION_DATADIR>
+tempo download --chain (mainnet|testnet) --minimal --datadir <EXECUTION_DATADIR>
 ```
 
-Download the snapshot before attaching the preserved consensus volume. The download installs its own consensus data under the local data directory; the validator uses the preserved volume instead when started with `--consensus.datadir`.
+Download the snapshot before attaching the preserved consensus volume. The download will installs its own consensus data under the local data directory. However the validator will use the preserved volume instead when started with `--consensus.datadir`.
 
 :::danger[Protect the preserved consensus state]
 Do not point `tempo download --consensus.datadir` at the preserved volume. In particular, `tempo download --force` removes existing consensus data at its destination. If replacing a failed download, use a separate local directory and leave the preserved volume untouched.
@@ -130,13 +124,13 @@ Do not point `tempo download --consensus.datadir` at the preserved volume. In pa
 
 <span id="attach-the-preserved-consensus-volume" />
 
-Attach and mount the preserved volume, or copy the stopped validator's complete consensus directory to the replacement. Use `<CONSENSUS_DATADIR>` for this directory. Keep it separate from any consensus directory created by the follower or snapshot; do not merge their files.
+Attach and mount the preserved volume, or restore the previous validator's complete consensus directory. Keep it separate from any consensus directory created by the follower or snapshot; do not merge their files.
 
 A follower's own consensus archive does not contain the active validator's private signing state. Using it can delay signing participation until the node recovers a share. Transfer the active validator's latest complete directory to preserve that state.
 
 #### Start with both data paths
 
-Start the validator with the [storage configuration above](#prepare-cloud-consensus-storage), using the replacement's local `--datadir`, the transferred `--consensus.datadir`, and the old validator's signing key. Remove `--follow` if reusing a follower's service configuration. Keep the retention setting in the service configuration.
+Start the validator with the [storage configuration above](#prepare-cloud-consensus-storage), using the replacement's local `--datadir`, the transferred `--consensus.datadir`, and the old validator's signing key. Remove `--follow` if reusing a follower's service configuration.
 
 If startup fails with an error reporting insufficient execution state, restore fresher execution state, either by [syncing a follower](/docs/guide/node/rpc) or by downloading a fresh snapshot.
 
@@ -152,8 +146,6 @@ Confirm [validator status](/docs/guide/node/validator-status) and [consensus par
 
 Treat the replacement as the active validator until you intentionally move the role again. Prevent the old host from restarting in validator mode. You can repurpose it as a follower and future standby by configuring `--follow` without `--consensus.signing-key` or `--consensus.secret`.
 
-Follower mode still requires a consensus archive when the execution database contains finalized blocks. If the consensus directory moved to the replacement, adding `--follow` to the old host's existing execution database is not enough to start it.
+If the old host's local consensus datadir is empty, follow [Running RPC and Standby Nodes](/docs/guide/node/rpc) to initially boostrap it again as a follower.
 
-If the old host's consensus volume is empty, follow [Running RPC and Standby Nodes](/docs/guide/node/rpc) to set it up as a follower.
-
-Keep the active validator's consensus volume attached exclusively to the active instance.
+Keep the active validator's remote consensus volume attached exclusively to the active instance.
