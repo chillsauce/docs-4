@@ -1,5 +1,21 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// These tests submit live testnet transactions; keep RPC concurrency bounded.
+const liveTests = [
+  'create-a-stablecoin',
+  'executing-swaps',
+  'faucet',
+  'manage-stablecoin',
+  'mint-stablecoins',
+  'ousd-zone-deposit',
+  'pay-with-ousd-fees',
+  'providing-liquidity',
+  'send-a-payment',
+  'use-for-fees',
+  'virtual-addresses',
+  'zones-live',
+].map((name) => `**/${name}.test.ts`)
+
 const isCI = !!process.env.CI
 const webServerUrl = isCI ? 'http://localhost:5173' : 'https://localhost:5173'
 
@@ -8,7 +24,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 1 : 1, // Retry once due to testnet flakiness
-  workers: isCI ? 1 : undefined,
+  workers: isCI ? 2 : undefined,
+  maxFailures: isCI ? 1 : undefined,
   timeout: 180000, // 3 min default timeout for testnet transactions
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : 'html',
   use: {
@@ -20,7 +37,14 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'chromium-live',
+      testMatch: liveTests,
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
+      testIgnore: liveTests,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
